@@ -1,44 +1,39 @@
-use crate::{router::RequestHandler, db::DatabasePool, cache::Cache, worker::WorkerPool};
+use crate::{app::{App, Request, Response}, db::DatabasePool, cache::Cache, worker::WorkerPool};
 use std::sync::Arc;
 
-pub fn register_default_handlers(router: &mut crate::router::Router) {
-    struct UsersHandler(Arc<DatabasePool>, Arc<Cache>);
-    impl RequestHandler for UsersHandler {
-        fn handle(&self, _request: &str) -> String {
-            if let Some(cached) = self.1.get("users") {
-                return cached;
-            }
-            let result = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{{"users": [{{"id": 1, "name": "John"}}]}}"
-            );
-            self.1.set("users", &result, 300);
-            result
-        }
-    }
+pub fn register_default_handlers(app: &mut App) {
+    app.get("/api/users", Box::new(|req: Request| {
+        Response::new(200)
+            .header("Content-Type", "application/json")
+            .body("{"users": [{"id": 1, "name": "John"}]}")
+    }));
 
-    struct CreateUserHandler(Arc<DatabasePool>, WorkerPool);
-    impl RequestHandler for CreateUserHandler {
-        fn handle(&self, request: &str) -> String {
-            self.1.queue_task(|| {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }).unwrap();
-            "HTTP/1.1 202 ACCEPTED\r\nContent-Type: application/json\r\n\r\n{"status": "processing"}"
-        }
-    }
+    app.post("/api/users", Box::new(|req: Request| {
+        app.worker_pool.queue_task(|| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }).unwrap();
+        Response::new(201)
+            .header("Content-Type", "application/json")
+            .body("{"status": "processing"}")
+    }));
 
-    struct DataHandler(Arc<Cache>);
-    impl RequestHandler for DataHandler {
-        fn handle(&self, _request: &str) -> String {
-            if let Some(cached) = self.0.get("data") {
-                return cached;
-            }
-            let result = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"data": "high_perf_data"}";
-            self.0.set("data", &result, 60);
-            result
-        }
-    }
+    app.put("/api/users/:id", Box::new(|req: Request| {
+        let id = req.params.get("id").unwrap_or(&"unknown".to_string());
+        Response::new(200)
+            .header("Content-Type", "application/json")
+            .body(format!("{{"message": "User {} updated"}}", id))
+    }));
 
-    router.register("GET /api/users", Box::new(UsersHandler(router.get_db_pool().clone(), router.get_cache().clone())));
-    router.register("POST /api/users", Box::new(CreateUserHandler(router.get_db_pool().clone(), router.get_worker_pool().clone())));
-    router.register("GET /api/data", Box::new(DataHandler(router.get_cache().clone())));
+    app.delete("/api/users/:id", Box::new(|req: Request| {
+        let id = req.params.get("id").unwrap_or(&"unknown".to_string());
+        Response::new(200)
+            .header("Content-Type", "application/json")
+            .body(format!("{{"message": "User {} deleted"}}", id))
+    }));
+
+    app.get("/api/data", Box::new(|req: Request| {
+        Response::new(200)
+            .header("Content-Type", "application/json")
+            .body("{"data": "high_perf_data"}")
+    }));
 }
