@@ -1,7 +1,7 @@
 pub mod config;
 pub mod server;
-pub mod router;
+pub mod app;
 
 pub use config::Config;
 pub use server::Server;
-pub use router::{Router, RequestHandler};
+pub use app::{App, Request, Response, Middleware, ThreadPoolConfig};
