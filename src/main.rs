@@ -1,6 +1,6 @@
 pub mod config;
 pub mod server;
-pub mod router;
+pub mod app;
 mod handlers;
 mod cache;
 mod db;
@@ -9,7 +9,7 @@ mod metrics;
 
 use config::Config;
 use server::Server;
-use router::Router;
+use app::App;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -19,23 +19,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cache = Arc::new(cache::Cache::new(config.cache_size));
     let metrics = Arc::new(metrics::Metrics::new());
     
-    let worker_pool = worker::WorkerPool::new(
+    let mut app = App::new_with_resources(
         config.worker_threads,
         db_pool.clone(),
         cache.clone(),
         metrics.clone()
     );
     
-    let mut router = Router::new(
-        db_pool.clone(),
-        cache.clone(),
-        metrics.clone(),
-        worker_pool
-    );
+    handlers::register_default_handlers(&mut app);
     
-    handlers::register_default_handlers(&mut router);
-    
-    let server = Server::new(&config, Arc::new(router));
+    let server = Server::new(&config, Arc::new(app));
     
     println!("Server starting on {}:{}", config.host, config.port);
     server.run().await?;
