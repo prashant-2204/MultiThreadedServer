@@ -1,15 +1,23 @@
-# High Performance Backend Server
+# MultiThreadedServer V2
 
-A robust, multi-threaded HTTP server built in Rust, capable of handling 100k+ requests/second. Includes an SDK for easy API creation.
+An Express-like, multi-threaded HTTP server framework built in Rust, capable of handling 100k+ requests/second. Includes a powerful SDK for CRUD operations, middleware, and thread pool management.
+
+## Updates from V1
+- **Full CRUD Support**: Added PUT, DELETE alongside GET, POST with middleware support.
+- **Express-like API**: Simplified routing, middleware chaining, and request/response handling.
+- **Thread Pool Control**: SDK now allows dynamic thread pool management (resize, shutdown).
+- **Enhanced Middleware**: Stackable middleware for request preprocessing and postprocessing.
+- **Improved Request/Response**: Structured Request/Response objects for easier manipulation.
 
 ## Features
-- Multi-threaded request handling
-- Connection pooling
-- In-memory caching
+- Multi-threaded request handling with configurable worker threads
+- Connection pooling for database operations
+- In-memory caching with TTL
 - Worker pool for background tasks
-- Performance metrics
-- Configurable scaling
-- SDK for custom API development
+- Performance metrics and latency tracking
+- SDK with Express-like abstractions
+- Middleware support for request/response processing
+- Dynamic thread pool management
 
 ## Installation
 1. Clone the repository:
@@ -45,36 +53,66 @@ Add to your project:
 MultiThreadedServer = { git = "https://github.com/prashant-2204/MultiThreadedServer.git" }
 ```
 
-### Creating a Simple API
+### Creating a CRUD API with Middleware
 ```rust
-use MultiThreadedServer::{Server, Config, Router, RequestHandler};
+use MultiThreadedServer::{Server, Config, App, Request, Response, Middleware, ThreadPoolConfig};
 use std::sync::Arc;
+
+struct LoggingMiddleware;
+impl Middleware for LoggingMiddleware {
+    fn process_request(&self, req: &mut Request) {
+        println!("Request: {} {}", req.method, req.path);
+    }
+    fn process_response(&self, _req: &Request, res: &mut Response) {
+        println!("Response: {}", res.status);
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load()?;
-    let mut router = Router::new();
+    let mut app = App::new();
 
-    // Define a custom handler
-    struct HelloHandler;
-    impl RequestHandler for HelloHandler {
-        fn handle(&self, _request: &str) -> String {
-            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHello, World!".to_string()
-        }
-    }
+    // Add middleware
+    app.use_middleware(Box::new(LoggingMiddleware));
 
-    // Register route
-    router.register("GET /hello", Box::new(HelloHandler));
+    // Define routes
+    app.get("/users", Box::new(|req: Request| {
+        Response::new(200).body("GET Users")
+    }));
 
-    let server = Server::new(&config, Arc::new(router));
+    app.post("/users", Box::new(|req: Request| {
+        Response::new(201).body("POST User Created")
+    }));
+
+    app.put("/users/:id", Box::new(|req: Request| {
+        let id = req.params.get("id").unwrap_or(&"unknown".to_string());
+        Response::new(200).body(format!("PUT User {} Updated", id))
+    }));
+
+    app.delete("/users/:id", Box::new(|req: Request| {
+        let id = req.params.get("id").unwrap_or(&"unknown".to_string());
+        Response::new(200).body(format!("DELETE User {} Removed", id))
+    }));
+
+    // Configure thread pool
+    app.configure_threads(ThreadPoolConfig {
+        min_threads: 4,
+        max_threads: 16,
+        queue_size: 1000
+    });
+
+    let server = Server::new(&config, Arc::new(app));
     server.run().await?;
     Ok(())
 }
 ```
 
-## API Endpoints
+## API Endpoints (Default)
 - GET /api/users - List users
 - POST /api/users - Create user
+- PUT /api/users/:id - Update user
+- DELETE /api/users/:id - Delete user
 - GET /api/data - Get cached data
 
 ## Configuration Options
@@ -82,16 +120,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 |-----------------|--------|-----------------|------------------------------|
 | host           | String | "0.0.0.0"      | Listening host              |
 | port           | u16    | 8080           | Listening port              |
-| worker_threads | usize  | CPU cores * 2  | Number of worker threads    |
+| worker_threads | usize  | CPU cores * 2  | Initial worker threads      |
 | max_connections| usize  | 10000          | Max database connections    |
 | db_url         | String | -              | Database connection string  |
 | cache_size     | usize  | 10000          | Cache capacity              |
 | request_timeout| u64    | 30             | Request timeout in seconds  |
 
+## Thread Pool Management
+```rust
+// Resize thread pool dynamically
+app.resize_thread_pool(12);
+
+// Shutdown thread pool (blocks until tasks complete)
+app.shutdown_thread_pool();
+```
+
 ## Performance
 - 100k+ requests/second on modern hardware
-- Low latency with caching
-- Efficient resource utilization
+- Low latency with caching and multi-threading
+- Efficient resource utilization with dynamic thread scaling
 
 ## Contributing
 1. Fork the repository
